@@ -1,11 +1,13 @@
-use std::{fs, io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, thread, time::Duration};
+use std::{fs, io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, ops::IndexMut, thread, time::Duration};
+
+use server::ThreadPool;
 fn main(){
     let tcp_listner = TcpListener::bind("127.0.0.1:8082").expect("Error Occured while binding listner to port");
-    let pool = ThreadPool::new
+    let thread_pool = ThreadPool::build(4).unwrap();
     for tcp_stream in tcp_listner.incoming(){
         let stream = tcp_stream.unwrap();
 
-        let join_Handler = thread::spawn(move ||{
+        let join_Handler = thread_pool.execute(|| {
             handle_connection(stream);
         });
     }

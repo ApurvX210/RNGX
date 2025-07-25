@@ -1,7 +1,6 @@
-use std::fmt::{Display, Error, Formatter};
-use std::thread::spawn;
+use std::fmt::{Display, Formatter};
+use std::sync::{mpsc,Arc,Mutex};
 use std::{thread, thread::JoinHandle};
-use std::any::Any;
 
 #[derive(Debug)]
 pub enum PoolCreationError {
@@ -19,21 +18,32 @@ impl Display for PoolCreationError {
 }
 impl std::error::Error for PoolCreationError {}
 
+type Job = Box<dyn FnOnce() + Send + 'static>;
+
 struct Worker{
     id: usize,
     thread_handler: JoinHandle<()>
 }
 
 impl Worker {
-    fn new(id:usize) -> Worker
+    fn new(id:usize,reciever:Arc<Mutex<mpsc::Receiver<Job>>>,) -> Worker
     {
-        let handler = thread::Builder::new().spawn(||{}).expect("Not able to create a new thread");
-        Worker { id: id, thread_handler:handler }
+        print!("Heelo");
+        let handler = thread::Builder::new().spawn(move ||
+            {
+                loop {
+                    let job = reciever.lock().unwrap().recv().unwrap();
+                    println!("Worker {id} got a job; executing.");
+                    job();
+                }
+            }).expect("Not able to create a new thread");
+        Worker { id: id, thread_handler:handler}
     }
 }
 
 pub struct ThreadPool{
-    workers: Vec<Worker>
+    workers: Vec<Worker>,
+    sender: mpsc::Sender<Job>
 }
 
 impl ThreadPool {
@@ -44,31 +54,31 @@ impl ThreadPool {
     /// # Panics
     ///
     /// The `new` function will panic if the size is zero.
-    fn build(thread_count: usize) -> Result<ThreadPool,PoolCreationError> {
+    pub fn build(thread_count: usize) -> Result<ThreadPool,PoolCreationError> {
         if thread_count <= 0{
             return Err(PoolCreationError::ZeroThreadError);
         }
+        
+        let (sender,receiver) = mpsc::channel();
 
+        let thread_reciever = Arc::new(Mutex::new(receiver));
         let mut workers: Vec<Worker> = Vec::with_capacity(thread_count);
 
         for id in 0..thread_count{
-            workers.push(Worker::new(id));
+            let rec = Arc::clone(&thread_reciever);
+            workers.push(Worker::new(id,rec));
         }
 
-        Ok(ThreadPool { workers:workers})
+        Ok(ThreadPool { workers:workers, sender:sender})
     }
 
-    fn execute<F>(&mut self,f: F)
+    pub fn execute<F>(&self,f: F)
         where
             F: FnOnce() + Send + 'static
     {
-        if self.available_threads > 0{
-            self.available_threads -= 1;
-            thread::spawn(f);
-        }else {
-            
-        }
+        let job = Box::new(f);
 
+        self.sender.send(job).expect("Error Occured while executing the request");
     }
 
 }
