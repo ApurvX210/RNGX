@@ -1,4 +1,13 @@
 use std::{fs, io::{BufRead, BufReader, Write}, net::{TcpListener, TcpStream}, ops::IndexMut, thread, time::Duration};
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum ServerError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("HTTP parsing error: {0}")]
+    Http(String),
+}
 
 use server::ThreadPool;
 fn main(){
@@ -13,7 +22,7 @@ fn main(){
     }
 }
 
-fn handle_connection(mut stream: TcpStream){
+fn handle_connection(mut stream: TcpStream) -> Result<(), ServerError>{
     let buffer_reader = BufReader::new(&stream);
     let http_request: Vec<_> = buffer_reader.lines().map(|result|{
         result.unwrap()

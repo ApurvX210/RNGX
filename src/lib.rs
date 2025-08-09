@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::mem::take;
 use std::sync::{mpsc,Arc,Mutex};
 use std::{thread, thread::JoinHandle};
 
@@ -32,18 +33,37 @@ impl Worker {
         let handler = thread::Builder::new().spawn(move ||
             {
                 loop {
-                    let job = reciever.lock().unwrap().recv().unwrap();
-                    println!("Worker {id} got a job; executing.");
-                    job();
+                    let message = reciever.lock().unwrap().recv();
+                    match message {
+                        Ok(job) => {
+                            println!("Worker {id} got a job; executing.");
+                            job();
+                        },
+                        Err(_) => {
+                            println!("Worker {id} disconnected; shutting down.");
+                            break;
+                        }
+                    }
                 }
             }).expect("Not able to create a new thread");
         Worker { id: id, thread_handler:handler}
     }
 }
 
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        for worker in self.workers.drain(..){
+            println!("Shutting down worker {}", worker.id);
+
+            worker.thread_handler.join().expect("Error occured while gracefully shutting down the worker");
+        }
+    }
+}
+
 pub struct ThreadPool{
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>
+    sender:  Option<mpsc::Sender<Job>>
 }
 
 impl ThreadPool {
@@ -69,7 +89,7 @@ impl ThreadPool {
             workers.push(Worker::new(id,rec));
         }
 
-        Ok(ThreadPool { workers:workers, sender:sender})
+        Ok(ThreadPool { workers:workers, sender:Some(sender)})
     }
 
     pub fn execute<F>(&self,f: F)
@@ -78,7 +98,7 @@ impl ThreadPool {
     {
         let job = Box::new(f);
 
-        self.sender.send(job).expect("Error Occured while executing the request");
+        self.sender.as_ref().unwrap().send(job).expect("Error Occured while executing the request");
     }
 
 }
