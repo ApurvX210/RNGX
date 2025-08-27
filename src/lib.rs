@@ -1,5 +1,4 @@
 use std::fmt::{Display, Formatter};
-use std::mem::take;
 use std::sync::{mpsc,Arc,Mutex};
 use std::{thread, thread::JoinHandle};
 
@@ -29,7 +28,6 @@ struct Worker{
 impl Worker {
     fn new(id:usize,reciever:Arc<Mutex<mpsc::Receiver<Job>>>,) -> Worker
     {
-        print!("Heelo");
         let handler = thread::Builder::new().spawn(move ||
             {
                 loop {
